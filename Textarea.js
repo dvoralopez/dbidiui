@@ -1,20 +1,13 @@
 /** @module dbidiui/Textarea */
 define(["dcl/dcl",
-	"dojo/dom-style", // domStyle.set
-	"dojo/has",	
-	"dojo/_base/lang",
-	"dojo/query",
-	"dojo/window",
-	"dojo/dom-class",
-	"dojo/dom-attr",
-	"dojo/dom-construct",
-	"dojo/dom-geometry", // domGeometry.position
-	"dbidiui/BidiSupportTextarea", 
-	"dbidiui/range",
-	"dojo/on",
-	], function (dcl, domStyle, has, lang, query, winUtils, domClass, domAttr, domConstruct, domGeometry, BidiSupportTextarea, rangeapi, on ) {
+	"decor/sniff",	
+	"./_supportTextarea", 
+	"./range",
+	"jquery/src/core",
+	"jquery/src/attributes/classes",	// addClass(), removeClass()
+	], function (dcl, has, domClass, _supportTextarea, rangeapi, $ ) {
 
-	var bidiSupport = new BidiSupportTextarea();
+	var supportTextarea = new _supportTextarea();
 	
 	return dcl(null, {
 	/**
@@ -69,14 +62,15 @@ define(["dcl/dcl",
 		/**
 		 * @method
 		 * 
-		 * Replaces textarea with rich text area to allow for setting direction of each paragraph,
-		 * if textDir is "auto". 
+		 * Replaces textarea with rich text area to allow for setting direction of each
+		 * paragraph, if textDir is "auto" and not disabled. 
 		 * Moves textarea off screen (need it to save value).
 		 * 
 		 * @private
 		 */
-		startup: function(){			
-			if (this.textDir == "auto" ) {
+		startup: function(){	
+			//_this = this;
+			if (this.textDir == "auto" && this.disabled == false) {
 				// Get style attributes and replace in iframe.src below.
 				var foundStyle = false;
 				this.savedStyle = "";
@@ -87,13 +81,13 @@ define(["dcl/dcl",
 					}
 				}
 				this.open();				
-				domClass.add(this.iframe.parentNode, "dijitEditorIFrameContainer");				
-				domAttr.set(this.iframe.parentNode, "style", this.savedStyle);
+				$(this.iframe.parentNode).addClass("dijitEditorIFrameContainer");			
+				this.iframe.parentNode.setAttribute("style", this.savedStyle);
 				this.iframe.parentNode.style.width = this.width;
 				
-				domClass.add(this.iframe, "dijitEditorIFrame");
-				domAttr.set(this.iframe, "allowTransparency", true);
-				bidiSupport.setEditor(this);							
+				$(this.iframe).addClass("dijitEditorIFrame");
+				this.iframe.setAttribute("allowTransparency", true);
+				supportTextarea.setEditor(this);							
 			}
 		},
 	
@@ -110,7 +104,7 @@ define(["dcl/dcl",
 			// Compute initial value of the editor
 			var html;
 			
-			if(lang.isString(this.textContent) && this.textContent.length>0){
+			if(this.textContent.constructor === String && this.textContent.length>0){
 				// Allow setting the editor content programmatically instead of
 				// relying on the initial content being contained within the target
 				// domNode.
@@ -132,36 +126,28 @@ define(["dcl/dcl",
 				ta.removeAttribute('widgetId');
 				dn.cssText = this.style; 
 				dn.className += " " + ta.className;
-				domConstruct.place(dn, ta, "before");
-				var tmpFunc = lang.hitch(this, function(){
+				ta.parentNode.insertBefore(dn, ta);
+				
+				var tmpFunc = function(){
 					//some browsers refuse to submit display=none textarea, so
 					//move the textarea off screen instead
-					domStyle.set(ta, {
-						display: "block",
-						position: "absolute",
-						top: "-1000px"
-					});
-
+					ta.style["display"] = "block";
+					ta.style["position"] = "absolute";
+					ta.style["top"] = "-1000px";
+			
 					if(has("ie")){ //nasty IE bug: abnormal formatting if overflow is not hidden
 						var s = ta.style;
 						this.__overflow = s.overflow;
 						s.overflow = "hidden";
 					}
-				});
+				};
 				if(has("ie")){
 					this.defer(tmpFunc, 10);
 				}else{
 					tmpFunc();
-				}
-
-				if(ta.form){
-					on(ta.form, "submit", lang.hitch(this, function(){
-						// Copy value to the <textarea> so it gets submitted along with form.
-						// FIXME: should we be calling close() here instead?
-						domAttr.set(ta, 'disabled', this.disabled); // don't submit the value if disabled
-					}));
-				}
+				}				
 			}
+			
 			if (html)
 				this.textContent = html;
 
@@ -190,32 +176,38 @@ define(["dcl/dcl",
 			}
 
 			ifr.frameBorder = 0;
-			ifr._loadFunc = lang.hitch(this, function(w){
+
+			var _this = this;
+
+			ifr._loadFunc = function(w){
 				// This method is called when the editor is first loaded and also if the Editor's
 				// dom node is repositioned. Unfortunately repositioning the Editor tends to
 				// clear the iframe's contents, so we can't just no-op in that case.
 
-				this.window = w;
-				this.document = w.document;
+				_this.window = w;
+				_this.document = w.document;
 
 				// Do final setup and set contents of editor.
-				this.onLoad(this.textContent);
-			});
+				_this._onLoad(_this.textContent);
+			};
+			
+			ifr._onkeyupFunc = function(event){
+				_this._onKeyUp(event);
+			};
+			
+			ifr._onblurFunc = function(){
+				_this._onBlur();
+			};
+			
+			ifr._onfocusFunc = function(){
+				_this._onFocus();
+			};
+			
+			
+			var labels = ta.ownerDocument.querySelectorAll('label');
 
-			ifr._onkeyupFunc = lang.hitch(this, function(event){
-				this.onKeyUp(event);
-			});
-			ifr._onblurFunc = lang.hitch(this, function(){
-				this.onBlur();
-			});
-			ifr._onfocusFunc = lang.hitch(this, function(){
-				this.onFocus();
-			});
-			
-			
-			
 			// Attach iframe to document, and set the initial (blank) content.
-			var src = this._getIframeDocTxt(this.savedStyle).replace(/\\/g, "\\\\").replace(/'/g, "\\'"),s;
+			var src = this._getIframeDocTxt(labels, this.savedStyle).replace(/\\/g, "\\\\").replace(/'/g, "\\'"),s;
 
 			// IE10 and earlier will throw an "Access is denied" error when attempting to access the parent frame if
 			// document.domain has been set, unless the child frame also has the same document.domain set. The child frame
@@ -240,9 +232,10 @@ define(["dcl/dcl",
 				ifr.setAttribute('src', s);
 				this.editingArea.appendChild(ifr);
 			}
-			domClass.add(this, this.baseClass);			
+			$(this).addClass(this.baseClass);
 		},
 		
+
 		/**
 		 * @method
 		 * 
@@ -261,7 +254,7 @@ define(["dcl/dcl",
 			*
 			* @returns {string}
 			*/
-			var ffGetValueFunc = lang.hitch(this, function(children, value){
+			var ffGetValueFunc =  function(children, value){
 				if (!children.length) {
 					if (children.children && children.children.length > 0) {
 						value += ffGetValueFunc(children.children, value);
@@ -288,7 +281,7 @@ define(["dcl/dcl",
 					}
 				}
 				return value;
-			});
+			};
 
 			
 			var value = "";
@@ -322,9 +315,9 @@ define(["dcl/dcl",
 		 * @returns {string}
 		 * @private
 		 */
-		_getIframeDocTxt: function(/*String*/ savedStyle){
-
-			var _cs = domStyle.getComputedStyle(this.textarea);
+		_getIframeDocTxt: function(/*Array*/ labels, /*String*/ savedStyle){
+			var _cs = this.textarea.ownerDocument.defaultView.getComputedStyle(this.textarea, null);
+			
 			// The contents inside of <body>.  The real contents are set later via a call to setValue().
 			// In auto-expand mode, need a wrapper div for AlwaysShowToolbar plugin to correctly
 			// expand/contract the editor as the content changes.
@@ -352,44 +345,27 @@ define(["dcl/dcl",
 				// work better, esp on IE, than '1.0'
 				lineHeight = "normal";
 			}
-			var userStyle = "";
-			var self = this;
-			if (this.style.replace) {
-			  this.style.replace(/(^|;)\s*(line-|font-?)[^;]+/ig, function(match){
-				match = match.replace(/^;/ig, "") + ';';
-				var s = match.split(":")[0];
-				if(s){
-					s = lang.trim(s);
-					s = s.toLowerCase();
-					var i;
-					var sC = "";
-					for(i = 0; i < s.length; i++){
-						var c = s.charAt(i);
-						switch(c){
-							case "-":
-								i++;
-								c = s.charAt(i).toUpperCase();
-							default:
-								sC += c;
-						}
-					}
-					domStyle.set(self.domNode, sC, "");
-				}
-				userStyle += match + ';';
-			});
-			}
-			userStyle = _cs;
+			var userStyle = _cs;
 			// need to find any associated label element, aria-label, or aria-labelledby and update iframe document title
-			var label = query('label[for="' + this.id + '"]');
 			var title = "";
-			if(label.length){
-				title = label[0].innerHTML;
-			}else if(this["aria-label"]){
-				title = this["aria-label"];
-			}else if(this["aria-labelledby"]){
-				title = dom.byId(this["aria-labelledby"]).innerHTML;
+			for (var i=0; i<labels.length; i++) {
+				if (labels[i].htmlFor == this.id) {
+					title = labels[i].innerHTML;
+					i = labels.length; //quit loop
+				}
 			}
-
+			if (title.length==0) {
+				for (var i=0; i<this.attributes.length; i++) {
+					if (this.attributes[i].nodeName == "aria-label") {
+						title = this.attributes[i].value;
+						i = this.attributes.length; //quit loop
+					} else if (this.attributes[i].nodeName == "aria-labelledby") {
+						title = this.attributes[i].value;
+						i = this.attributes.length; //quit loop
+					}
+				}			
+			}
+			
 			// Now that we have the title, also set it as the title attribute on the iframe
 			this.iframe.setAttribute("title", title);
 
@@ -494,7 +470,6 @@ define(["dcl/dcl",
 				this.iframe.style.height = totalHeight+"px";
 		},
 		
-		
 		/***************** 
 		 * Event handlers
 		 *****************/
@@ -509,12 +484,11 @@ define(["dcl/dcl",
 		 *
 		 * @protected
 		 */
-		onLoad: function(/*String*/ html){
+		_onLoad: function(/*String*/ html){
 			// there's a wrapper div around the content, see _getIframeDocTxt().
 			this.editNode = this.document.body.firstChild;
 			var _this = this;
 			this.iframe.onfocus = this.document.onfocus = function(){
-//			    domClass.add(_this.iframe.parentNode, "d-textareaFocus");
 				_this.editNode.focus();
 			};
 
@@ -523,18 +497,22 @@ define(["dcl/dcl",
 				// For each newline - create div with direction
 				var divNode = this.editNode;
 				var divContents = html.split('\n');
+				var newNode;
 				// First div is placed as "first"; others are "after"
 				if (this.getTextDir(divContents[0]) == "ltr") { 
-					divNode = domConstruct.place("<div style='direction:ltr'>"+divContents[0]+"</div>", divNode, "first");
+					newNode = supportTextarea.toDom("<div style='direction:ltr'>"+divContents[0]+"</div>", divNode.ownerDocument);
 				} else {
-					divNode = domConstruct.place("<div style='direction:rtl'>"+divContents[0]+"</div>", divNode, "first");
+					newNode = supportTextarea.toDom("<div style='direction:rtl'>"+divContents[0]+"</div>", divNode.ownerDocument);
 				}
+				divNode = supportTextarea.domInsertFirst(newNode, divNode);
+				
 				for (var i=1; i<divContents.length; i++) {
 					if (this.getTextDir(divContents[i]) == "ltr") { 
-						divNode = domConstruct.place("<div style='direction:ltr'>"+divContents[i]+"</div>", divNode, "after");
+						var newNode = supportTextarea.toDom("<div style='direction:ltr'>"+divContents[i]+"</div>", divNode.ownerDocument);
 					} else {
-						divNode = domConstruct.place("<div style='direction:rtl'>"+divContents[i]+"</div>", divNode, "after");
+						var newNode = supportTextarea.toDom("<div style='direction:rtr'>"+divContents[i]+"</div>", divNode.ownerDocument);
 					}
+					divNode = supportTextarea.domInsertAfter(newNode, divNode);
 				}
 			}
 			this.resize();
@@ -551,17 +529,17 @@ define(["dcl/dcl",
 		 *
 		 * @protected
 		 */
-		onKeyUp: function(/*Event?*/ e){
+		_onKeyUp: function(/*Event?*/ e){
 			var sel = rangeapi.getSelection(this.window);
 			if (!sel || sel.rangeCount == 0){
 				return;
 			}
 			if (!has("ff") || e.keyCode != 13) {
-				bidiSupport.editor = this;
+				supportTextarea.editor = this;
 				if (this.getTextDir(sel.focusNode.nodeValue) == "ltr") { 
-					bidiSupport._changeState("ltr");
+					supportTextarea._changeState("ltr");
 				} else {
-					bidiSupport._changeState("rtl");
+					supportTextarea._changeState("rtl");
 				}
 			}	
 			this.resize();
@@ -575,8 +553,8 @@ define(["dcl/dcl",
 		 *
 		 * @protected
 		 */
-		onBlur : function(){
-			domClass.remove(this.iframe.parentNode, "d-textareaFocus");
+		_onBlur : function(){
+			$(this.iframe.parentNode).removeClass("d-textareaFocus");
 			this.textarea.value = this._getValueForTA(this.textarea);
 		},
 		
@@ -588,10 +566,9 @@ define(["dcl/dcl",
 		 *
 		 * @protected
 		 */
-		onFocus : function(){
-			domClass.add(this.iframe.parentNode, "d-textareaFocus");			
+		_onFocus : function(){
+			$(this.iframe.parentNode).addClass("d-textareaFocus");			
 		},
-		
 		
 	});
 });
