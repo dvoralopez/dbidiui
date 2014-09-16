@@ -4,8 +4,8 @@ define(["dcl/dcl",
 	"./_supportTextarea", 
 	"./range",
 	"jquery/src/core",
-	"jquery/src/attributes/classes",	// addClass(), removeClass()
-	], function (dcl, has, domClass, _supportTextarea, rangeapi, $ ) {
+	"jquery/src/attributes/classes",	
+	], function (dcl, has, _supportTextarea, rangeapi, $ ) {
 
 	var supportTextarea = new _supportTextarea();
 	
